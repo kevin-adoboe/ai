@@ -1,0 +1,71 @@
+version: 2.1
+
+# Hand-written for the CircleCI functions benchmark.
+#
+# Ground truth for invocation syntax is the function source
+# (github.com/circleci/functions, cmd/setup-node), NOT the README. The form that
+# actually resolves in-job is:
+#
+#     circleci run <namespace>/<function>@<version> -- <subcommand> --flags
+#
+# setup-node's README is wrong three ways: it omits the `circleci/` namespace,
+# omits the `--` separator, and its examples cite `v1.0.0`, which is not a real
+# published version. The only published version is 0.0.1-15ea7e5.
+#
+# IMPORTANT: setup-node installs *packages*, not the Node runtime, and it does
+# not install the package manager either -- InstallPackages does
+# exec.LookPath(pm.Binary()) and fails "pnpm binary not found on PATH". So the
+# executor must supply Node, and a prior step must supply pnpm.
+#
+# TEST SCOPE DECISION: this job targets `test:ci` (~109s locally), not the full
+# `pnpm test` (~137s). Rationale: test:ci is upstream's own command for the
+# equivalent GitHub Actions job (test_matrix), and it deliberately excludes
+# `packages/ai` and `@ai-sdk/codemod` because upstream shards those into
+# separate jobs (4 shards x Node 22/24/26 each). test:ci is therefore the
+# faithful single-job analogue. Keep this consistent -- do not silently switch
+# to `pnpm test`.
+
+executors:
+  # Must provide Node: setup-node cannot install a runtime.
+  node:
+    docker:
+      - image: cimg/node:22.18
+    resource_class: large
+
+jobs:
+  test:
+    executor: node
+    environment:
+      # Canary switch. "0" on main => green. The canary-red branch sets "1",
+      # tripping packages/provider-utils/src/zz-benchmark-canary.test.ts.
+      # Declared on the `test` task in turbo.json so it survives turbo's strict
+      # env mode and lands in the cache key.
+      BENCHMARK_CANARY: "0"
+      # Matches upstream's test_matrix job.
+      SKIP_RSC_E2E: "1"
+    steps:
+      - checkout
+
+      - run:
+          name: Provision pnpm 11.23.0 (setup-node will NOT do this)
+          command: |
+            sudo npm install -g pnpm@11.23.0
+            pnpm --version
+
+      - run:
+          name: Install packages (setup-node install)
+          command: |
+            circleci run circleci/setup-node@0.0.1-15ea7e5 -- install --package-manager pnpm
+
+      - run:
+          name: Build packages
+          command: pnpm run build:packages
+
+      - run:
+          name: Tests (test:ci)
+          command: pnpm run test:ci
+
+workflows:
+  build:
+    jobs:
+      - test
