@@ -40,7 +40,7 @@ jobs:
       # tripping packages/provider-utils/src/zz-benchmark-canary.test.ts.
       # Declared on the `test` task in turbo.json so it survives turbo's strict
       # env mode and lands in the cache key.
-      BENCHMARK_CANARY: "0"
+      BENCHMARK_CANARY: "1"
       # Matches upstream's test_matrix job.
       SKIP_RSC_E2E: "1"
     steps:
